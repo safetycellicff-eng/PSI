@@ -1,0 +1,11 @@
+# Secrets — never commit credentials
+.streamlit/secrets.toml
+
+# Local demo-mode data
+.local_data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
