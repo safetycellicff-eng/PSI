@@ -10,14 +10,9 @@ from datetime import date, datetime
 import pandas as pd
 import streamlit as st
 
+from backend import get_storage
 from ppt_builder import build_ppt
-from storage import (
-    GoogleSheetsStorage,
-    LocalStorage,
-    RECORD_HEADERS,
-    STATUSES,
-    SupabaseStorage,
-)
+from storage import RECORD_HEADERS, STATUSES
 
 st.set_page_config(
     page_title="Plant Safety Inspection Tracker",
@@ -35,24 +30,6 @@ CATEGORY_OPTIONS = {
 CATEGORY_HELP = "Pick the type of finding. The short code (SV/UA/UC/NM) is shown on the slide marker."
 # Short code -> full descriptive label, for display.
 CATEGORY_LABELS = {code: label for label, code in CATEGORY_OPTIONS.items()}
-
-
-@st.cache_resource
-def get_storage():
-    """Pick the storage backend from st.secrets: Sheets > Supabase > local demo."""
-    try:
-        secrets = dict(st.secrets)
-    except FileNotFoundError:
-        secrets = {}
-    if "gcp_service_account" in secrets:
-        spreadsheet_id = secrets.get("spreadsheet_id", "")
-        if "/" in spreadsheet_id:  # full URL pasted; extract the key
-            spreadsheet_id = spreadsheet_id.split("/d/")[1].split("/")[0]
-        return GoogleSheetsStorage(dict(secrets["gcp_service_account"]), spreadsheet_id), "Google Sheets"
-    if "supabase" in secrets:
-        sb = secrets["supabase"]
-        return SupabaseStorage(sb["url"], sb["key"]), "Supabase"
-    return LocalStorage(), "Local (demo)"
 
 
 def load_records(storage):

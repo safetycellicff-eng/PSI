@@ -26,11 +26,18 @@ create table if not exists public.records (
     description   text,               -- description of violation / hazard
     first_appeared text,              -- date it first appeared (dd/mm/YYYY)
     action_by     text,               -- responsible officer, e.g. Dy.CEE/M
-    remarks       text,
+    remarks       text,               -- inspector's remarks
     category      text default 'SV',  -- SV / UA / UC / NM
     status        text default 'Pending',  -- Pending / Completed
+    pdc           text,               -- Probable Date of Completion (dd/mm/YYYY)
+    action_remarks text,              -- action owner's remarks (compliance app)
     photo_count   integer default 0
 );
+
+-- If you created the table with an earlier version, add the newer columns.
+-- (Safe to run repeatedly.)
+alter table public.records add column if not exists pdc text;
+alter table public.records add column if not exists action_remarks text;
 
 -- Helpful index for the Records tab (filter by status).
 create index if not exists records_status_idx on public.records (status);

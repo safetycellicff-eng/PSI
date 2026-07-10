@@ -1,28 +1,52 @@
 # 🦺 Plant Safety Inspection Tracker
 
-A small web app for logging safety violations/hazards found during plant
-safety inspections, storing them in **Google Sheets** (or **Supabase**), and
-generating the meeting **PowerPoint** on demand — one slide per record, in the
-same format as the original safety-meeting deck (green title bar, details
-table, site photos, category marker).
+Two web apps that share the **same data** (Google Sheets or Supabase):
 
-## What it does
+1. **`app.py` — Inspection Tracker** (for the inspection team): log
+   violations/hazards found during plant safety inspections and generate the
+   meeting **PowerPoint** on demand — one slide per record, in the same format
+   as the original safety-meeting deck (green title bar, details table, site
+   photos, category marker).
+2. **`response_app.py` — Point Compliance** (for the action owners): see the
+   points raised, but **cannot edit or delete** them; they only add their
+   **PDC** (Probable Date of Completion), **remarks**, and **completion
+   photos**, and mark a point Completed.
+
+## App 1 — Inspection Tracker (`app.py`)
 
 - **➕ New Entry** — log a violation/hazard: location/shop, description, date
   it first appeared, responsible officer (e.g. `Dy.CEE/M`), remarks, category
-  (SV/UA/UC/NM), status (Pending/Completed), and up to 4 site photos
+  (SV – Safety Violation / UA – Unsafe Act / UC – Unsafe Condition /
+  NM – Near Miss), status, and up to 4 BEFORE + 4 AFTER site photos
   (upload files or capture with the camera).
-- **📋 Records** — view, search and filter all records; update status/remarks
-  when an item is completed; view photos; delete records; **export the whole
-  list (or the filtered view) to Excel** (`.xlsx`), or **download those
-  records as a PowerPoint** right from this tab.
+- **📋 Records** — view, search and filter all records; update status/remarks;
+  view photos; delete records; **export the whole list (or the filtered view)
+  to Excel** (`.xlsx`), or **download those records as a PowerPoint**.
 - **🎞️ Generate PPT** — pick All / Pending / Completed / specific records and
   download a `.pptx` with one slide per record, matching the original format.
 - **⚠️ Danger zone** (sidebar) — a **Delete all history** button that wipes
   every record and photo from the backend (guarded by a confirmation checkbox).
 
-All data (including photos) is stored in your Google Sheet, so you can also
-view and edit it directly in Google Sheets.
+## App 2 — Point Compliance (`response_app.py`)
+
+For the officers responsible for closing points. The point itself is shown
+**read-only** — no editing or deleting. Each point offers a compliance form:
+
+- **PDC** — Probable Date of Completion.
+- **Your remarks** — the action owner's remarks (kept separate from the
+  inspector's remarks; the inspector's text is never overwritten).
+- **Completion photos** — stored as the record's "after" photos, so they show
+  up as the AFTER images on the generated PPT slide.
+- **Mark this point as Completed**.
+
+Run it separately (same repo, same data):
+
+```bash
+streamlit run response_app.py
+```
+
+All data (including photos) is stored in your backend, so you can also view
+and edit it directly in Google Sheets / Supabase.
 
 ## Run it locally
 
@@ -110,7 +134,21 @@ If you prefer Supabase instead of Google Sheets:
 
 | File | Purpose |
 |------|---------|
-| `app.py` | Streamlit UI (entry form, records view, PPT generation) |
+| `app.py` | App 1 — Inspection Tracker (entry form, records, PPT generation) |
+| `response_app.py` | App 2 — Point Compliance (PDC, remarks, completion photos) |
+| `backend.py` | Shared storage-backend selection used by both apps |
 | `storage.py` | Google Sheets / Supabase / local storage backends |
 | `ppt_builder.py` | Builds the PPT in the original meeting format |
 | `template.pptx` | Slide master/branding from the original deck |
+| `supabase_setup.sql` | Table + storage bucket setup for the Supabase backend |
+
+## Deploying both apps
+
+Each app is a separate Streamlit deployment from the **same repo**, sharing the
+same secrets/data:
+
+- Deploy `app.py` → the inspection team's URL.
+- Deploy `response_app.py` → the action owners' URL.
+
+Paste the same secrets into both apps' **Settings → Secrets** so they read and
+write the same backend.

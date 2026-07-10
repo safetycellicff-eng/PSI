@@ -29,6 +29,8 @@ RECORD_HEADERS = [
     "Remarks",
     "Category",
     "Status",
+    "PDC",             # Probable Date of Completion, set by the action owner
+    "Action Remarks",  # the action owner's remarks (distinct from inspector's)
     "Photo Count",
 ]
 
@@ -104,6 +106,8 @@ class GoogleSheetsStorage:
             record.get("remarks", ""),
             record.get("category", "SV"),
             record.get("status", "Pending"),
+            record.get("pdc", ""),
+            record.get("action_remarks", ""),
             len(before_photos) + len(after_photos),
         ]
         self.records_ws.append_row(row, value_input_option="RAW")
@@ -183,12 +187,18 @@ class GoogleSheetsStorage:
                 return i
         raise KeyError(f"Record {record_id} not found")
 
-    def update_record(self, record_id, status=None, remarks=None):
+    def update_record(self, record_id, status=None, remarks=None, pdc=None,
+                      action_remarks=None):
         row_no = self._find_record_row(record_id)
-        if status is not None:
-            self.records_ws.update_cell(row_no, RECORD_HEADERS.index("Status") + 1, status)
-        if remarks is not None:
-            self.records_ws.update_cell(row_no, RECORD_HEADERS.index("Remarks") + 1, remarks)
+        updates = {
+            "Status": status,
+            "Remarks": remarks,
+            "PDC": pdc,
+            "Action Remarks": action_remarks,
+        }
+        for header, value in updates.items():
+            if value is not None:
+                self.records_ws.update_cell(row_no, RECORD_HEADERS.index(header) + 1, value)
 
     def delete_record(self, record_id):
         row_no = self._find_record_row(record_id)
@@ -232,6 +242,8 @@ class SupabaseStorage:
         "Remarks": "remarks",
         "Category": "category",
         "Status": "status",
+        "PDC": "pdc",
+        "Action Remarks": "action_remarks",
         "Photo Count": "photo_count",
     }
 
@@ -254,6 +266,8 @@ class SupabaseStorage:
                 "remarks": record.get("remarks", ""),
                 "category": record.get("category", "SV"),
                 "status": record.get("status", "Pending"),
+                "pdc": record.get("pdc", ""),
+                "action_remarks": record.get("action_remarks", ""),
                 "photo_count": len(before_photos) + len(after_photos),
             }
         ).execute()
@@ -309,12 +323,17 @@ class SupabaseStorage:
     def get_photos_bulk(self, record_ids):
         return {rid: self.get_photos(rid) for rid in record_ids}
 
-    def update_record(self, record_id, status=None, remarks=None):
+    def update_record(self, record_id, status=None, remarks=None, pdc=None,
+                      action_remarks=None):
         changes = {}
         if status is not None:
             changes["status"] = status
         if remarks is not None:
             changes["remarks"] = remarks
+        if pdc is not None:
+            changes["pdc"] = pdc
+        if action_remarks is not None:
+            changes["action_remarks"] = action_remarks
         if changes:
             self.client.table(self.TABLE).update(changes).eq("id", record_id).execute()
 
@@ -378,6 +397,8 @@ class LocalStorage:
                 "Remarks": record.get("remarks", ""),
                 "Category": record.get("category", "SV"),
                 "Status": record.get("status", "Pending"),
+                "PDC": record.get("pdc", ""),
+                "Action Remarks": record.get("action_remarks", ""),
                 "Photo Count": len(before_photos) + len(after_photos),
             }
         )
@@ -423,14 +444,20 @@ class LocalStorage:
     def get_photos_bulk(self, record_ids):
         return {rid: self.get_photos(rid) for rid in record_ids}
 
-    def update_record(self, record_id, status=None, remarks=None):
+    def update_record(self, record_id, status=None, remarks=None, pdc=None,
+                      action_remarks=None):
+        fields = {
+            "Status": status,
+            "Remarks": remarks,
+            "PDC": pdc,
+            "Action Remarks": action_remarks,
+        }
         records = self.fetch_records()
         for record in records:
             if record["ID"] == record_id:
-                if status is not None:
-                    record["Status"] = status
-                if remarks is not None:
-                    record["Remarks"] = remarks
+                for header, value in fields.items():
+                    if value is not None:
+                        record[header] = value
         self._write_all(records)
 
     def delete_record(self, record_id):
