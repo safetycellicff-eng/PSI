@@ -1,18 +1,12 @@
 # 🦺 Plant Safety Inspection Tracker
 
-Two web apps that share the **same data** (Google Sheets or Supabase):
+A single web app (`app.py`) for logging safety violations/hazards found during
+plant safety inspections, closing them out, storing everything in **Google
+Sheets** or **Supabase**, and generating the meeting **PowerPoint** on demand —
+one slide per record, in the same format as the original safety-meeting deck
+(green title bar, details table, site photos, category marker).
 
-1. **`app.py` — Inspection Tracker** (for the inspection team): log
-   violations/hazards found during plant safety inspections and generate the
-   meeting **PowerPoint** on demand — one slide per record, in the same format
-   as the original safety-meeting deck (green title bar, details table, site
-   photos, category marker).
-2. **`response_app.py` — Point Compliance** (for the action owners): see the
-   points raised, but **cannot edit or delete** them; they only add their
-   **PDC** (Probable Date of Completion), **remarks**, and **completion
-   photos**, and mark a point Completed.
-
-## App 1 — Inspection Tracker (`app.py`)
+## What it does — four tabs
 
 - **➕ New Entry** — log a violation/hazard: location/shop, description, date
   it first appeared, responsible officer (e.g. `Dy.CEE/M`), remarks, category
@@ -22,28 +16,20 @@ Two web apps that share the **same data** (Google Sheets or Supabase):
 - **📋 Records** — view, search and filter all records; update status/remarks;
   view photos; delete records; **export the whole list (or the filtered view)
   to Excel** (`.xlsx`), or **download those records as a PowerPoint**.
+- **✅ Compliance** — close out a point. The point itself is shown
+  **read-only** (no editing or deleting here); you only add:
+  - **PDC** — Probable Date of Completion.
+  - **Remarks (action taken)** — kept separate from the inspector's remarks,
+    which are never overwritten.
+  - **Completion photos** — stored as the record's "after" photos, so they show
+    up as the AFTER images on the generated PPT slide.
+  - **Mark this point as Completed**.
 - **🎞️ Generate PPT** — pick All / Pending / Completed / specific records and
   download a `.pptx` with one slide per record, matching the original format.
-- **⚠️ Danger zone** (sidebar) — a **Delete all history** button that wipes
-  every record and photo from the backend (guarded by a confirmation checkbox).
 
-## App 2 — Point Compliance (`response_app.py`)
-
-For the officers responsible for closing points. The point itself is shown
-**read-only** — no editing or deleting. Each point offers a compliance form:
-
-- **PDC** — Probable Date of Completion.
-- **Your remarks** — the action owner's remarks (kept separate from the
-  inspector's remarks; the inspector's text is never overwritten).
-- **Completion photos** — stored as the record's "after" photos, so they show
-  up as the AFTER images on the generated PPT slide.
-- **Mark this point as Completed**.
-
-Run it separately (same repo, same data):
-
-```bash
-streamlit run response_app.py
-```
+Plus a **⚠️ Danger zone** in the sidebar — a **Delete all history** button that
+wipes every record and photo from the backend (guarded by a confirmation
+checkbox).
 
 All data (including photos) is stored in your backend, so you can also view
 and edit it directly in Google Sheets / Supabase.
@@ -57,6 +43,25 @@ streamlit run app.py
 
 With no credentials configured the app runs in **local demo mode** (data saved
 to `.local_data/` on your machine) so you can try it immediately.
+
+## Password login (optional but recommended)
+
+By default a deployed app is **public** — anyone with the link sees the data.
+To require a password, add an `[auth]` section to your secrets:
+
+```toml
+[auth]
+password = "your-password"
+```
+
+- If you omit the `[auth]` section entirely, the app stays open (no login).
+- The password lives only in secrets — never in the code or on GitHub. Because
+  Streamlit runs server-side, it's never exposed to visitors' browsers.
+- A **Log out** button appears in the sidebar once signed in.
+
+For a fixed, known set of viewers you can instead (or additionally) use
+Streamlit Community Cloud's built-in privacy: **app → Settings → Sharing →
+"Only specific people can view this app"** and invite them by email.
 
 ## Connect Google Sheets (recommended)
 
@@ -134,21 +139,9 @@ If you prefer Supabase instead of Google Sheets:
 
 | File | Purpose |
 |------|---------|
-| `app.py` | App 1 — Inspection Tracker (entry form, records, PPT generation) |
-| `response_app.py` | App 2 — Point Compliance (PDC, remarks, completion photos) |
-| `backend.py` | Shared storage-backend selection used by both apps |
+| `app.py` | The app — New Entry / Records / Compliance / Generate PPT tabs |
+| `backend.py` | Storage-backend selection and password login |
 | `storage.py` | Google Sheets / Supabase / local storage backends |
 | `ppt_builder.py` | Builds the PPT in the original meeting format |
 | `template.pptx` | Slide master/branding from the original deck |
 | `supabase_setup.sql` | Table + storage bucket setup for the Supabase backend |
-
-## Deploying both apps
-
-Each app is a separate Streamlit deployment from the **same repo**, sharing the
-same secrets/data:
-
-- Deploy `app.py` → the inspection team's URL.
-- Deploy `response_app.py` → the action owners' URL.
-
-Paste the same secrets into both apps' **Settings → Secrets** so they read and
-write the same backend.

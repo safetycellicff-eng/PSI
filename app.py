@@ -10,7 +10,7 @@ from datetime import date, datetime
 import pandas as pd
 import streamlit as st
 
-from backend import get_storage
+from backend import get_storage, logout_button, require_login
 from ppt_builder import build_ppt
 from storage import RECORD_HEADERS, STATUSES
 
@@ -50,6 +50,9 @@ def to_excel_bytes(df):
 
 
 def main():
+    if not require_login("password", title="🦺 Plant Safety Inspection — Sign in"):
+        return
+
     try:
         storage, backend_name = get_storage()
     except Exception as exc:
@@ -77,6 +80,7 @@ def main():
         if st.button("🔄 Refresh data"):
             st.cache_data.clear()
             st.rerun()
+        logout_button("password")
 
         with st.expander("⚠️ Danger zone"):
             st.caption(
@@ -90,14 +94,16 @@ def main():
                 st.success("All history deleted.")
                 st.rerun()
 
-    tab_new, tab_records, tab_ppt = st.tabs(
-        ["➕ New Entry", "📋 Records", "🎞️ Generate PPT"]
+    tab_new, tab_records, tab_compliance, tab_ppt = st.tabs(
+        ["➕ New Entry", "📋 Records", "✅ Compliance", "🎞️ Generate PPT"]
     )
 
     with tab_new:
         render_new_entry(storage)
     with tab_records:
         render_records(storage)
+    with tab_compliance:
+        render_compliance(storage)
     with tab_ppt:
         render_generate_ppt(storage)
 
@@ -299,6 +305,121 @@ def render_records(storage):
             storage.add_photos(selected_id, [p.getvalue() for p in new_after], kind="after")
             st.success("Photos attached.")
             st.rerun()
+
+
+def parse_date(value):
+    """Parse a stored dd/mm/YYYY string, falling back to today."""
+    try:
+        return datetime.strptime(str(value), "%d/%m/%Y").date()
+    except (ValueError, TypeError):
+        return date.today()
+
+
+def render_compliance(storage):
+    """Action-owner view: close out points by adding PDC, remarks and
+    completion photos. The point itself is read-only here — it can't be
+    edited or deleted from this tab."""
+    st.subheader("Close out a point")
+    st.caption(
+        "Add the **PDC** (Probable Date of Completion), your **remarks** and "
+        "**completion photos**. The point details themselves are read-only here."
+    )
+    records = load_records(storage)
+    if not records:
+        st.info("No points have been raised yet — add one in the **New Entry** tab.")
+        return
+
+    df = records_dataframe(records).fillna("")
+
+    scope = st.radio("Show", ["Pending", "All", "Completed"], horizontal=True)
+    if scope == "Pending":
+        view = df[df["Status"] == "Pending"]
+    elif scope == "Completed":
+        view = df[df["Status"] == "Completed"]
+    else:
+        view = df
+
+    if view.empty:
+        st.success("Nothing here 🎉")
+        return
+
+    labels = {
+        f"{row['ID']} — {row['Description of Violation/Hazard'][:70]}": row["ID"]
+        for _, row in view.iterrows()
+    }
+    picked = st.selectbox("Select a point", list(labels))
+    record = df[df["ID"] == labels[picked]].iloc[0]
+    record_id = record["ID"]
+
+    detail_col, photo_col = st.columns([3, 2])
+    with detail_col:
+        st.markdown("#### 📌 Point raised (read-only)")
+        st.markdown(
+            f"**Location / Shop:** {record['Location/Shop']}\n\n"
+            f"**Description:** {record['Description of Violation/Hazard']}\n\n"
+            f"**First appeared:** {record['First Appeared On']} &nbsp;·&nbsp; "
+            f"**Action:** {record['Action By']} &nbsp;·&nbsp; "
+            f"**Category:** {record['Category']} &nbsp;·&nbsp; "
+            f"**Status:** {record['Status']}\n\n"
+            f"**Inspector's remarks:** {record['Remarks'] or '—'}"
+        )
+    with photo_col:
+        photos = storage.get_photos(record_id)
+        if photos["before"]:
+            st.markdown("**Point photos**")
+            for photo in photos["before"]:
+                st.image(photo, use_container_width=True)
+
+    st.divider()
+    st.markdown("#### ✍️ Compliance")
+    with st.form(f"compliance_{record_id}"):
+        col1, col2 = st.columns(2)
+        with col1:
+            pdc = st.date_input(
+                "PDC — Probable Date of Completion",
+                value=parse_date(record["PDC"]),
+            )
+        with col2:
+            mark_done = st.checkbox(
+                "Mark this point as Completed",
+                value=(record["Status"] == "Completed"),
+            )
+        action_remarks = st.text_area(
+            "Remarks (action taken)",
+            value=record["Action Remarks"],
+            placeholder="e.g. Bus bar sunken and earth pit provided on both sides.",
+        )
+        completion_photos = st.file_uploader(
+            "Completion photos (rectified condition)",
+            type=["jpg", "jpeg", "png"],
+            accept_multiple_files=True,
+        )
+        with st.expander("📷 Or capture a completion photo with the camera"):
+            camera_photo = st.camera_input("Capture completion photo")
+        submitted = st.form_submit_button("💾 Submit compliance", type="primary")
+
+    if submitted:
+        new_photos = [p.getvalue() for p in (completion_photos or [])]
+        if camera_photo is not None:
+            new_photos.append(camera_photo.getvalue())
+        with st.spinner("Saving…"):
+            storage.update_record(
+                record_id,
+                status="Completed" if mark_done else "Pending",
+                pdc=pdc.strftime("%d/%m/%Y"),
+                action_remarks=action_remarks.strip(),
+            )
+            if new_photos:
+                storage.add_photos(record_id, new_photos[:4], kind="after")
+        st.success("Compliance saved ✅")
+        st.rerun()
+
+    existing_after = storage.get_photos(record_id)["after"]
+    if existing_after:
+        st.markdown("**Completion photos already uploaded**")
+        cols = st.columns(min(4, len(existing_after)))
+        for i, photo in enumerate(existing_after):
+            cols[i % len(cols)].image(photo, use_container_width=True)
 
 
 def render_generate_ppt(storage):
