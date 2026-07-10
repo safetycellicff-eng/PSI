@@ -22,6 +22,7 @@ from PIL import Image, ImageOps
 RECORD_HEADERS = [
     "ID",
     "Created On",
+    "Safety Officer",  # name of the officer who raised/uploaded the point
     "Location/Shop",
     "Description of Violation/Hazard",
     "First Appeared On",
@@ -44,11 +45,22 @@ CHUNK_SIZE = 45000
 STATUSES = ["Pending", "Completed"]
 
 
-def prepare_photo(file_bytes, max_px=1200, quality=75):
-    """Normalise an uploaded photo: fix EXIF rotation, resize, re-encode as JPEG."""
+# Default compression: a good balance of resolution and stored size.
+DEFAULT_MAX_PX = 1400
+DEFAULT_QUALITY = 80
+
+
+def prepare_photo(file_bytes, max_px=DEFAULT_MAX_PX, quality=DEFAULT_QUALITY):
+    """Normalise + compress an uploaded photo.
+
+    Fixes EXIF rotation, downscales so the longest side is at most ``max_px``
+    (never upscaling, so resolution is preserved for smaller images), and
+    re-encodes as an optimised JPEG at ``quality`` (1-95). Higher ``max_px`` /
+    ``quality`` keep more detail; lower values save more space.
+    """
     img = Image.open(io.BytesIO(file_bytes))
     img = ImageOps.exif_transpose(img)
-    img.thumbnail((max_px, max_px))
+    img.thumbnail((max_px, max_px))  # only shrinks; smaller images are untouched
     if img.mode != "RGB":
         img = img.convert("RGB")
     out = io.BytesIO()
@@ -62,6 +74,17 @@ def new_record_id():
 
 def empty_photo_set():
     return {kind: [] for kind in PHOTO_KINDS}
+
+
+def _record_updates(status=None, remarks=None, pdc=None, action_remarks=None):
+    """Build a {RECORD_HEADERS key: value} dict for update_fields, skipping Nones."""
+    updates = {
+        "Status": status,
+        "Remarks": remarks,
+        "PDC": pdc,
+        "Action Remarks": action_remarks,
+    }
+    return {header: value for header, value in updates.items() if value is not None}
 
 
 class GoogleSheetsStorage:
@@ -93,12 +116,14 @@ class GoogleSheetsStorage:
             ws.update(values=[headers], range_name="A1")
         return ws
 
-    def add_record(self, record, before_photos, after_photos=None):
+    def add_record(self, record, before_photos, after_photos=None,
+                   max_px=DEFAULT_MAX_PX, quality=DEFAULT_QUALITY):
         record_id = new_record_id()
         after_photos = after_photos or []
         row = [
             record_id,
             datetime.now().strftime("%d/%m/%Y %H:%M"),
+            record.get("safety_officer", ""),
             record.get("location", ""),
             record.get("description", ""),
             record.get("first_appeared", ""),
@@ -111,18 +136,19 @@ class GoogleSheetsStorage:
             len(before_photos) + len(after_photos),
         ]
         self.records_ws.append_row(row, value_input_option="RAW")
-        rows = self._photo_rows(record_id, "before", before_photos, start_no=1)
-        rows += self._photo_rows(record_id, "after", after_photos, start_no=1)
+        rows = self._photo_rows(record_id, "before", before_photos, 1, max_px, quality)
+        rows += self._photo_rows(record_id, "after", after_photos, 1, max_px, quality)
         if rows:
             self.photos_ws.append_rows(rows, value_input_option="RAW")
         return record_id
 
-    def add_photos(self, record_id, photos, kind="after"):
+    def add_photos(self, record_id, photos, kind="after",
+                   max_px=DEFAULT_MAX_PX, quality=DEFAULT_QUALITY):
         if not photos:
             return
         existing = self.get_photos(record_id)
         start_no = len(existing.get(kind, [])) + 1
-        rows = self._photo_rows(record_id, kind, photos, start_no=start_no)
+        rows = self._photo_rows(record_id, kind, photos, start_no, max_px, quality)
         self.photos_ws.append_rows(rows, value_input_option="RAW")
         total = sum(len(v) for v in existing.values()) + len(photos)
         row_no = self._find_record_row(record_id)
@@ -131,10 +157,13 @@ class GoogleSheetsStorage:
         )
 
     @staticmethod
-    def _photo_rows(record_id, kind, photos, start_no):
+    def _photo_rows(record_id, kind, photos, start_no,
+                    max_px=DEFAULT_MAX_PX, quality=DEFAULT_QUALITY):
         rows = []
         for offset, photo_bytes in enumerate(photos):
-            data = base64.b64encode(prepare_photo(photo_bytes)).decode("ascii")
+            data = base64.b64encode(
+                prepare_photo(photo_bytes, max_px, quality)
+            ).decode("ascii")
             for chunk_no, start in enumerate(range(0, len(data), CHUNK_SIZE), start=1):
                 rows.append([
                     record_id, kind, start_no + offset, chunk_no,
@@ -187,18 +216,17 @@ class GoogleSheetsStorage:
                 return i
         raise KeyError(f"Record {record_id} not found")
 
+    def update_fields(self, record_id, updates):
+        """Update arbitrary columns. ``updates`` maps RECORD_HEADERS keys to values."""
+        row_no = self._find_record_row(record_id)
+        for header, value in updates.items():
+            self.records_ws.update_cell(row_no, RECORD_HEADERS.index(header) + 1, value)
+
     def update_record(self, record_id, status=None, remarks=None, pdc=None,
                       action_remarks=None):
-        row_no = self._find_record_row(record_id)
-        updates = {
-            "Status": status,
-            "Remarks": remarks,
-            "PDC": pdc,
-            "Action Remarks": action_remarks,
-        }
-        for header, value in updates.items():
-            if value is not None:
-                self.records_ws.update_cell(row_no, RECORD_HEADERS.index(header) + 1, value)
+        updates = _record_updates(status, remarks, pdc, action_remarks)
+        if updates:
+            self.update_fields(record_id, updates)
 
     def delete_record(self, record_id):
         row_no = self._find_record_row(record_id)
@@ -235,6 +263,7 @@ class SupabaseStorage:
     COLUMN_MAP = {
         "ID": "id",
         "Created On": "created_on",
+        "Safety Officer": "safety_officer",
         "Location/Shop": "location",
         "Description of Violation/Hazard": "description",
         "First Appeared On": "first_appeared",
@@ -252,13 +281,15 @@ class SupabaseStorage:
 
         self.client = create_client(url, key)
 
-    def add_record(self, record, before_photos, after_photos=None):
+    def add_record(self, record, before_photos, after_photos=None,
+                   max_px=DEFAULT_MAX_PX, quality=DEFAULT_QUALITY):
         record_id = new_record_id()
         after_photos = after_photos or []
         self.client.table(self.TABLE).insert(
             {
                 "id": record_id,
                 "created_on": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                "safety_officer": record.get("safety_officer", ""),
                 "location": record.get("location", ""),
                 "description": record.get("description", ""),
                 "first_appeared": record.get("first_appeared", ""),
@@ -271,24 +302,26 @@ class SupabaseStorage:
                 "photo_count": len(before_photos) + len(after_photos),
             }
         ).execute()
-        self._upload(record_id, "before", before_photos, start_no=1)
-        self._upload(record_id, "after", after_photos, start_no=1)
+        self._upload(record_id, "before", before_photos, 1, max_px, quality)
+        self._upload(record_id, "after", after_photos, 1, max_px, quality)
         return record_id
 
-    def _upload(self, record_id, kind, photos, start_no):
+    def _upload(self, record_id, kind, photos, start_no,
+                max_px=DEFAULT_MAX_PX, quality=DEFAULT_QUALITY):
         storage = self.client.storage.from_(self.BUCKET)
         for offset, photo_bytes in enumerate(photos):
             storage.upload(
                 f"{record_id}_{kind}_{start_no + offset}.jpg",
-                prepare_photo(photo_bytes),
+                prepare_photo(photo_bytes, max_px, quality),
                 {"content-type": "image/jpeg"},
             )
 
-    def add_photos(self, record_id, photos, kind="after"):
+    def add_photos(self, record_id, photos, kind="after",
+                   max_px=DEFAULT_MAX_PX, quality=DEFAULT_QUALITY):
         if not photos:
             return
         existing = self.get_photos(record_id)
-        self._upload(record_id, kind, photos, start_no=len(existing[kind]) + 1)
+        self._upload(record_id, kind, photos, len(existing[kind]) + 1, max_px, quality)
         total = sum(len(v) for v in existing.values()) + len(photos)
         self.client.table(self.TABLE).update({"photo_count": total}).eq(
             "id", record_id
@@ -323,19 +356,17 @@ class SupabaseStorage:
     def get_photos_bulk(self, record_ids):
         return {rid: self.get_photos(rid) for rid in record_ids}
 
-    def update_record(self, record_id, status=None, remarks=None, pdc=None,
-                      action_remarks=None):
-        changes = {}
-        if status is not None:
-            changes["status"] = status
-        if remarks is not None:
-            changes["remarks"] = remarks
-        if pdc is not None:
-            changes["pdc"] = pdc
-        if action_remarks is not None:
-            changes["action_remarks"] = action_remarks
+    def update_fields(self, record_id, updates):
+        """Update arbitrary columns. ``updates`` maps RECORD_HEADERS keys to values."""
+        changes = {self.COLUMN_MAP[header]: value for header, value in updates.items()}
         if changes:
             self.client.table(self.TABLE).update(changes).eq("id", record_id).execute()
+
+    def update_record(self, record_id, status=None, remarks=None, pdc=None,
+                      action_remarks=None):
+        updates = _record_updates(status, remarks, pdc, action_remarks)
+        if updates:
+            self.update_fields(record_id, updates)
 
     def delete_record(self, record_id):
         photos = self.get_photos(record_id)
@@ -382,7 +413,8 @@ class LocalStorage:
     def _photo_path(self, record_id, kind, photo_no):
         return os.path.join(self.photos_dir, f"{record_id}_{kind}_{photo_no}.jpg")
 
-    def add_record(self, record, before_photos, after_photos=None):
+    def add_record(self, record, before_photos, after_photos=None,
+                   max_px=DEFAULT_MAX_PX, quality=DEFAULT_QUALITY):
         record_id = new_record_id()
         after_photos = after_photos or []
         records = self.fetch_records()
@@ -390,6 +422,7 @@ class LocalStorage:
             {
                 "ID": record_id,
                 "Created On": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                "Safety Officer": record.get("safety_officer", ""),
                 "Location/Shop": record.get("location", ""),
                 "Description of Violation/Hazard": record.get("description", ""),
                 "First Appeared On": record.get("first_appeared", ""),
@@ -406,17 +439,18 @@ class LocalStorage:
         for kind, photos in (("before", before_photos), ("after", after_photos)):
             for photo_no, photo_bytes in enumerate(photos, start=1):
                 with open(self._photo_path(record_id, kind, photo_no), "wb") as f:
-                    f.write(prepare_photo(photo_bytes))
+                    f.write(prepare_photo(photo_bytes, max_px, quality))
         return record_id
 
-    def add_photos(self, record_id, photos, kind="after"):
+    def add_photos(self, record_id, photos, kind="after",
+                   max_px=DEFAULT_MAX_PX, quality=DEFAULT_QUALITY):
         if not photos:
             return
         existing = self.get_photos(record_id)
         start_no = len(existing[kind]) + 1
         for offset, photo_bytes in enumerate(photos):
             with open(self._photo_path(record_id, kind, start_no + offset), "wb") as f:
-                f.write(prepare_photo(photo_bytes))
+                f.write(prepare_photo(photo_bytes, max_px, quality))
         records = self.fetch_records()
         total = sum(len(v) for v in existing.values()) + len(photos)
         for record in records:
@@ -444,21 +478,19 @@ class LocalStorage:
     def get_photos_bulk(self, record_ids):
         return {rid: self.get_photos(rid) for rid in record_ids}
 
-    def update_record(self, record_id, status=None, remarks=None, pdc=None,
-                      action_remarks=None):
-        fields = {
-            "Status": status,
-            "Remarks": remarks,
-            "PDC": pdc,
-            "Action Remarks": action_remarks,
-        }
+    def update_fields(self, record_id, updates):
+        """Update arbitrary columns. ``updates`` maps RECORD_HEADERS keys to values."""
         records = self.fetch_records()
         for record in records:
             if record["ID"] == record_id:
-                for header, value in fields.items():
-                    if value is not None:
-                        record[header] = value
+                record.update(updates)
         self._write_all(records)
+
+    def update_record(self, record_id, status=None, remarks=None, pdc=None,
+                      action_remarks=None):
+        updates = _record_updates(status, remarks, pdc, action_remarks)
+        if updates:
+            self.update_fields(record_id, updates)
 
     def delete_record(self, record_id):
         records = [r for r in self.fetch_records() if r["ID"] != record_id]

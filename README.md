@@ -6,26 +6,40 @@ Sheets** or **Supabase**, and generating the meeting **PowerPoint** on demand �
 one slide per record, in the same format as the original safety-meeting deck
 (green title bar, details table, site photos, category marker).
 
-## What it does — four tabs
+## Structure — two department tabs
 
-- **➕ New Entry** — log a violation/hazard: location/shop, description, date
-  it first appeared, responsible officer (e.g. `Dy.CEE/M`), remarks, category
-  (SV – Safety Violation / UA – Unsafe Act / UC – Unsafe Condition /
-  NM – Near Miss), status, and up to 4 BEFORE + 4 AFTER site photos
-  (upload files or capture with the camera).
-- **📋 Records** — view, search and filter all records; update status/remarks;
-  view photos; delete records; **export the whole list (or the filtered view)
-  to Excel** (`.xlsx`), or **download those records as a PowerPoint**.
-- **✅ Compliance** — close out a point. The point itself is shown
-  **read-only** (no editing or deleting here); you only add:
+The app is a single password-protected app split into two top-level tabs:
+
+- **👷 Safety Officer** — the inspection team's workspace, with three sub-tabs:
+  **New Entry**, **Records**, **Generate PPT**.
+- **🏭 Other Department** — the action owners' **Compliance** view.
+
+### 👷 Safety Officer
+
+- **➕ New Entry** — log a violation/hazard: **Safety Officer** (who is
+  uploading), location/shop, description, date it first appeared, responsible
+  officer (e.g. `Dy.CEE/M`), remarks, category (SV – Safety Violation /
+  UA – Unsafe Act / UC – Unsafe Condition / NM – Near Miss), status, and up to
+  4 BEFORE + 4 AFTER site photos (upload files or capture with the camera).
+  A **Photo quality / compression** option shrinks photos before storing them
+  to save database space while keeping good resolution.
+- **📋 Records** — view, search and filter all records; **✏️ Edit a point**
+  (correct the PSI — description, location, category, officer, etc.); update
+  status; view photos; attach more photos; delete records; **export to Excel**
+  (`.xlsx`) or **download as a PowerPoint**.
+- **🎞️ Generate PPT** — pick All / Pending / Completed / specific records and
+  download a `.pptx` with one slide per record, matching the original format.
+
+### 🏭 Other Department
+
+- **✅ Compliance** — close out a point. The point is shown **read-only**
+  (it can't be edited or deleted here); you only add:
   - **PDC** — Probable Date of Completion.
   - **Remarks (action taken)** — kept separate from the inspector's remarks,
     which are never overwritten.
   - **Completion photos** — stored as the record's "after" photos, so they show
     up as the AFTER images on the generated PPT slide.
   - **Mark this point as Completed**.
-- **🎞️ Generate PPT** — pick All / Pending / Completed / specific records and
-  download a `.pptx` with one slide per record, matching the original format.
 
 Plus a **⚠️ Danger zone** in the sidebar — a **Delete all history** button that
 wipes every record and photo from the backend (guarded by a confirmation

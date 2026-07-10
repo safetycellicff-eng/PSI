@@ -31,13 +31,36 @@ CATEGORY_HELP = "Pick the type of finding. The short code (SV/UA/UC/NM) is shown
 # Short code -> full descriptive label, for display.
 CATEGORY_LABELS = {code: label for label, code in CATEGORY_OPTIONS.items()}
 
+# Image compression presets -> (max longest side in px, JPEG quality).
+# Higher = better resolution but larger; lower = smaller size in the database.
+COMPRESSION_PRESETS = {
+    "Balanced — good quality, smaller size (recommended)": (1400, 80),
+    "High resolution — larger files": (1800, 88),
+    "Maximum compression — smallest size": (1000, 65),
+}
+COMPRESSION_HELP = (
+    "Photos are resized and re-encoded before storing, to save database space "
+    "while keeping good resolution. Pick how much to compress."
+)
+
+
+def compression_selector(key):
+    """Render the compression preset picker and return (max_px, quality)."""
+    label = st.selectbox(
+        "Photo quality / compression",
+        list(COMPRESSION_PRESETS),
+        help=COMPRESSION_HELP,
+        key=key,
+    )
+    return COMPRESSION_PRESETS[label]
+
 
 def load_records(storage):
     return storage.fetch_records()
 
 
 def records_dataframe(records):
-    df = pd.DataFrame(records, columns=RECORD_HEADERS)
+    df = pd.DataFrame(records, columns=RECORD_HEADERS).fillna("")
     return df
 
 
@@ -94,18 +117,21 @@ def main():
                 st.success("All history deleted.")
                 st.rerun()
 
-    tab_new, tab_records, tab_compliance, tab_ppt = st.tabs(
-        ["➕ New Entry", "📋 Records", "✅ Compliance", "🎞️ Generate PPT"]
-    )
+    dept_safety, dept_other = st.tabs(["👷 Safety Officer", "🏭 Other Department"])
 
-    with tab_new:
-        render_new_entry(storage)
-    with tab_records:
-        render_records(storage)
-    with tab_compliance:
+    with dept_safety:
+        tab_new, tab_records, tab_ppt = st.tabs(
+            ["➕ New Entry", "📋 Records", "🎞️ Generate PPT"]
+        )
+        with tab_new:
+            render_new_entry(storage)
+        with tab_records:
+            render_records(storage)
+        with tab_ppt:
+            render_generate_ppt(storage)
+
+    with dept_other:
         render_compliance(storage)
-    with tab_ppt:
-        render_generate_ppt(storage)
 
 
 def render_new_entry(storage):
@@ -113,6 +139,9 @@ def render_new_entry(storage):
     with st.form("new_entry", clear_on_submit=True):
         col1, col2 = st.columns([2, 1])
         with col1:
+            safety_officer = st.text_input(
+                "Safety Officer (uploaded by)", placeholder="e.g. Er. R. Kumar, SSE/Safety"
+            )
             location = st.text_input(
                 "Location / Shop", placeholder="e.g. Shop-87 Commissioning shed"
             )
@@ -154,6 +183,7 @@ def render_new_entry(storage):
             )
         with st.expander("📷 Or take a photo with the camera"):
             camera_photo = st.camera_input("Capture site photo (added as BEFORE)")
+        max_px, quality = compression_selector("new_entry_compression")
         submitted = st.form_submit_button("💾 Save record", type="primary")
 
     if submitted:
@@ -172,6 +202,7 @@ def render_new_entry(storage):
         with st.spinner("Saving…"):
             record_id = storage.add_record(
                 {
+                    "safety_officer": safety_officer.strip(),
                     "location": location.strip(),
                     "description": full_description,
                     "first_appeared": first_appeared.strftime("%d/%m/%Y"),
@@ -182,6 +213,8 @@ def render_new_entry(storage):
                 },
                 before_list[:4],
                 after_list[:4],
+                max_px=max_px,
+                quality=quality,
             )
         st.success(f"Saved record **{record_id}** ✅")
 
@@ -256,12 +289,54 @@ def render_records(storage):
     detail_col, photo_col = st.columns([3, 2])
     with detail_col:
         st.markdown(
+            f"**Safety Officer:** {record['Safety Officer'] or '—'} &nbsp;·&nbsp; "
+            f"**Status:** {record['Status']}\n\n"
             f"**Description:** {record['Description of Violation/Hazard']}\n\n"
             f"**First appeared:** {record['First Appeared On']} · "
             f"**Action:** {record['Action By']} · "
             f"**Category:** {CATEGORY_LABELS.get(record['Category'], record['Category'])}\n\n"
-            f"**Remarks:** {record['Remarks']}"
+            f"**Inspector's remarks:** {record['Remarks'] or '—'}\n\n"
+            f"**PDC:** {record['PDC'] or '—'} &nbsp;·&nbsp; "
+            f"**Action remarks:** {record['Action Remarks'] or '—'}"
         )
+
+        with st.expander("✏️ Edit point (correct the PSI)"):
+            with st.form(f"edit_{selected_id}"):
+                e_officer = st.text_input("Safety Officer", value=record["Safety Officer"])
+                e_location = st.text_input("Location / Shop", value=record["Location/Shop"])
+                e_desc = st.text_area(
+                    "Description of Violation / Hazard (this is what shows on the slide)",
+                    value=record["Description of Violation/Hazard"],
+                    height=110,
+                )
+                ec1, ec2 = st.columns(2)
+                with ec1:
+                    e_first = st.date_input(
+                        "First appeared on", value=parse_date(record["First Appeared On"])
+                    )
+                    e_action = st.text_input("Action (responsible officer)", value=record["Action By"])
+                with ec2:
+                    cat_labels = list(CATEGORY_OPTIONS)
+                    cur_label = CATEGORY_LABELS.get(record["Category"], cat_labels[0])
+                    e_cat_label = st.selectbox(
+                        "Category", cat_labels,
+                        index=cat_labels.index(cur_label) if cur_label in cat_labels else 0,
+                    )
+                e_remarks = st.text_area("Inspector's remarks", value=record["Remarks"])
+                save_edit = st.form_submit_button("💾 Save changes", type="primary")
+            if save_edit:
+                storage.update_fields(selected_id, {
+                    "Safety Officer": e_officer.strip(),
+                    "Location/Shop": e_location.strip(),
+                    "Description of Violation/Hazard": e_desc.strip(),
+                    "First Appeared On": e_first.strftime("%d/%m/%Y"),
+                    "Action By": e_action.strip(),
+                    "Category": CATEGORY_OPTIONS[e_cat_label],
+                    "Remarks": e_remarks.strip(),
+                })
+                st.success("Point updated.")
+                st.rerun()
+
         new_status = st.radio(
             "Status",
             STATUSES,
@@ -269,12 +344,11 @@ def render_records(storage):
             horizontal=True,
             key=f"status_{selected_id}",
         )
-        new_remarks = st.text_area("Remarks", value=record["Remarks"], key=f"remarks_{selected_id}")
         b1, b2 = st.columns([1, 1])
         with b1:
-            if st.button("✅ Update record", type="primary"):
-                storage.update_record(selected_id, status=new_status, remarks=new_remarks)
-                st.success("Record updated.")
+            if st.button("✅ Update status", type="primary"):
+                storage.update_record(selected_id, status=new_status)
+                st.success("Status updated.")
                 st.rerun()
         with b2:
             if st.button("🗑️ Delete record"):
@@ -355,6 +429,7 @@ def render_compliance(storage):
     with detail_col:
         st.markdown("#### 📌 Point raised (read-only)")
         st.markdown(
+            f"**Safety Officer:** {record['Safety Officer'] or '—'}\n\n"
             f"**Location / Shop:** {record['Location/Shop']}\n\n"
             f"**Description:** {record['Description of Violation/Hazard']}\n\n"
             f"**First appeared:** {record['First Appeared On']} &nbsp;·&nbsp; "
