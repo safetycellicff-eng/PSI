@@ -23,6 +23,7 @@ create table if not exists public.records (
     id            text primary key,   -- e.g. 20260709-73567F
     created_on    text,               -- "dd/mm/YYYY HH:MM" when logged
     safety_officer text,              -- officer who raised/uploaded the point
+    department    text,               -- department responsible for the point
     location      text,               -- location / shop
     description   text,               -- description of violation / hazard
     first_appeared text,              -- date it first appeared (dd/mm/YYYY)
@@ -38,6 +39,7 @@ create table if not exists public.records (
 -- If you created the table with an earlier version, add the newer columns.
 -- (Safe to run repeatedly.)
 alter table public.records add column if not exists safety_officer text;
+alter table public.records add column if not exists department text;
 alter table public.records add column if not exists pdc text;
 alter table public.records add column if not exists action_remarks text;
 

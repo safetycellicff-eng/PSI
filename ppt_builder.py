@@ -138,8 +138,8 @@ def _add_photos(slide, photo_set):
         half_w = (PHOTO_WIDTH - PHOTO_GAP) / 2
         area_h = PHOTO_HEIGHT - LABEL_HEIGHT - Inches(0.1)
         right_x = PHOTO_LEFT + half_w + PHOTO_GAP
-        _fill_area(slide, before[:2], PHOTO_LEFT, PHOTO_TOP, half_w, area_h)
-        _fill_area(slide, after[:2], right_x, PHOTO_TOP, half_w, area_h)
+        _fill_area(slide, before, PHOTO_LEFT, PHOTO_TOP, half_w, area_h)
+        _fill_area(slide, after, right_x, PHOTO_TOP, half_w, area_h)
         label_y = PHOTO_TOP + area_h + Inches(0.08)
         _add_label(slide, "BEFORE", PHOTO_LEFT + (half_w - LABEL_WIDTH) / 2, label_y)
         _add_label(slide, "AFTER", right_x + (half_w - LABEL_WIDTH) / 2, label_y)

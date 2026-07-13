@@ -10,7 +10,7 @@ from datetime import date, datetime
 import pandas as pd
 import streamlit as st
 
-from backend import get_storage, logout_button, require_login
+from backend import auth_status_note, get_storage, logout_button, require_login
 from ppt_builder import build_ppt
 from storage import RECORD_HEADERS, STATUSES
 
@@ -19,6 +19,74 @@ st.set_page_config(
     page_icon="🦺",
     layout="wide",
 )
+
+# Responsive tweaks so the app works well on phones: stack columns, enlarge
+# touch targets, keep the metric row compact, and reclaim screen padding.
+MOBILE_CSS = """
+<style>
+@media (max-width: 640px) {
+  /* Stack side-by-side columns vertically on narrow screens */
+  div[data-testid="stHorizontalBlock"] {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"],
+  div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+    width: 100% !important;
+    flex: 1 1 100% !important;
+    min-width: 100% !important;
+  }
+  /* …but keep the small metric tiles (Total/Pending/Completed) in one row */
+  div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"]) {
+    flex-direction: row;
+  }
+  div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"]) >
+  div[data-testid="stColumn"] {
+    width: auto !important;
+    flex: 1 1 30% !important;
+    min-width: 30% !important;
+  }
+  /* Full-width buttons with comfortable touch targets. The button's whole
+     wrapper chain shrink-wraps, so widen every level down to the button. */
+  div[data-testid="stElementContainer"]:has(div[data-testid="stButton"]),
+  div[data-testid="stElementContainer"]:has(div[data-testid="stDownloadButton"]),
+  div[data-testid="stElementContainer"]:has(div[data-testid="stFormSubmitButton"]),
+  div[data-testid="stElementContainer"]:has(div[data-testid="stButton"]) > div,
+  div[data-testid="stElementContainer"]:has(div[data-testid="stDownloadButton"]) > div,
+  div[data-testid="stElementContainer"]:has(div[data-testid="stFormSubmitButton"]) > div,
+  div[data-testid="stButton"],
+  div[data-testid="stDownloadButton"],
+  div[data-testid="stFormSubmitButton"] {
+    width: 100% !important;
+  }
+  div[data-testid="stButton"] button,
+  div[data-testid="stDownloadButton"] button,
+  div[data-testid="stFormSubmitButton"] button {
+    width: 100%;
+    min-height: 2.75rem;
+    font-size: 1rem;
+  }
+  /* Reclaim horizontal padding so content gets the full phone width */
+  div[data-testid="stMainBlockContainer"],
+  section.main > div.block-container {
+    padding-left: 0.9rem;
+    padding-right: 0.9rem;
+    padding-top: 2.2rem;
+  }
+  /* Slightly smaller headings on phones */
+  h1 { font-size: 1.45rem !important; }
+  h2 { font-size: 1.2rem !important; }
+  h3 { font-size: 1.05rem !important; }
+  /* Comfortable tab labels; the tab bar swipes horizontally */
+  .stTabs [data-baseweb="tab"] {
+    padding: 0.4rem 0.7rem;
+    font-size: 0.95rem;
+  }
+}
+/* Comfortable spacing for radio options on touch screens at any size */
+div[data-testid="stRadio"] div[role="radiogroup"] { gap: 0.6rem; }
+</style>
+"""
 
 # Full label shown in the UI -> short code stored and printed on the PPT marker.
 CATEGORY_OPTIONS = {
@@ -30,6 +98,32 @@ CATEGORY_OPTIONS = {
 CATEGORY_HELP = "Pick the type of finding. The short code (SV/UA/UC/NM) is shown on the slide marker."
 # Short code -> full descriptive label, for display.
 CATEGORY_LABELS = {code: label for label, code in CATEGORY_OPTIONS.items()}
+
+# Departments responsible for compliance. EDIT THIS LIST to match your plant —
+# placeholder values for now; the app also shows any other department names
+# already present in saved records, so old data never disappears from filters.
+DEPARTMENTS = [
+    "Electrical",
+    "Mechanical",
+    "Civil",
+    "S&T",
+    "Stores",
+    "Operations",
+    "Safety",
+    "Other",
+]
+
+
+def department_options(df=None):
+    """DEPARTMENTS plus any department values already present in the data."""
+    options = list(DEPARTMENTS)
+    if df is not None and "Department" in df:
+        for value in df["Department"].unique():
+            value = str(value).strip()
+            if value and value not in options:
+                options.append(value)
+    return options
+
 
 # Image compression presets -> (max longest side in px, JPEG quality).
 # Higher = better resolution but larger; lower = smaller size in the database.
@@ -73,6 +167,7 @@ def to_excel_bytes(df):
 
 
 def main():
+    st.markdown(MOBILE_CSS, unsafe_allow_html=True)
     if not require_login("password", title="🦺 Plant Safety Inspection — Sign in"):
         return
 
@@ -104,6 +199,7 @@ def main():
             st.cache_data.clear()
             st.rerun()
         logout_button("password")
+        auth_status_note()
 
         with st.expander("⚠️ Danger zone"):
             st.caption(
@@ -160,6 +256,10 @@ def render_new_entry(storage):
             )
         with col2:
             first_appeared = st.date_input("First appeared on", value=date.today())
+            department = st.selectbox(
+                "Department (responsible)", department_options(),
+                help="Which department has to act on this point.",
+            )
             action_by = st.text_input("Action (responsible officer)", placeholder="e.g. Dy.CEE/M")
             category_label = st.selectbox(
                 "Category", list(CATEGORY_OPTIONS), help=CATEGORY_HELP
@@ -203,6 +303,7 @@ def render_new_entry(storage):
             record_id = storage.add_record(
                 {
                     "safety_officer": safety_officer.strip(),
+                    "department": department,
                     "location": location.strip(),
                     "description": full_description,
                     "first_appeared": first_appeared.strftime("%d/%m/%Y"),
@@ -227,23 +328,28 @@ def render_records(storage):
         return
 
     df = records_dataframe(records)
-    col1, col2 = st.columns([1, 2])
+    col1, col2, col3 = st.columns([1, 1, 2])
     with col1:
         status_filter = st.multiselect("Status", STATUSES, default=STATUSES)
     with col2:
+        dept_filter = st.selectbox(
+            "Department", ["All departments"] + department_options(df)
+        )
+    with col3:
         search = st.text_input("Search", placeholder="Filter by any text…")
 
-    filtered = df[df["Status"].isin(status_filter)] if status_filter else df
+    dept_scope = df if dept_filter == "All departments" else df[df["Department"] == dept_filter]
+    filtered = dept_scope[dept_scope["Status"].isin(status_filter)] if status_filter else dept_scope
     if search.strip():
         mask = filtered.apply(
             lambda row: row.astype(str).str.contains(search, case=False).any(), axis=1
         )
         filtered = filtered[mask]
 
-    pending = (df["Status"] == "Pending").sum()
-    completed = (df["Status"] == "Completed").sum()
+    pending = (dept_scope["Status"] == "Pending").sum()
+    completed = (dept_scope["Status"] == "Completed").sum()
     m1, m2, m3 = st.columns(3)
-    m1.metric("Total", len(df))
+    m1.metric("Total", len(dept_scope))
     m2.metric("Pending", int(pending))
     m3.metric("Completed", int(completed))
 
@@ -290,6 +396,7 @@ def render_records(storage):
     with detail_col:
         st.markdown(
             f"**Safety Officer:** {record['Safety Officer'] or '—'} &nbsp;·&nbsp; "
+            f"**Department:** {record['Department'] or '—'} &nbsp;·&nbsp; "
             f"**Status:** {record['Status']}\n\n"
             f"**Description:** {record['Description of Violation/Hazard']}\n\n"
             f"**First appeared:** {record['First Appeared On']} · "
@@ -303,6 +410,12 @@ def render_records(storage):
         with st.expander("✏️ Edit point (correct the PSI)"):
             with st.form(f"edit_{selected_id}"):
                 e_officer = st.text_input("Safety Officer", value=record["Safety Officer"])
+                dept_opts = department_options(df)
+                cur_dept = record["Department"] if record["Department"] in dept_opts else dept_opts[0]
+                e_department = st.selectbox(
+                    "Department (responsible)", dept_opts,
+                    index=dept_opts.index(cur_dept),
+                )
                 e_location = st.text_input("Location / Shop", value=record["Location/Shop"])
                 e_desc = st.text_area(
                     "Description of Violation / Hazard (this is what shows on the slide)",
@@ -327,6 +440,7 @@ def render_records(storage):
             if save_edit:
                 storage.update_fields(selected_id, {
                     "Safety Officer": e_officer.strip(),
+                    "Department": e_department,
                     "Location/Shop": e_location.strip(),
                     "Description of Violation/Hazard": e_desc.strip(),
                     "First Appeared On": e_first.strftime("%d/%m/%Y"),
@@ -356,28 +470,42 @@ def render_records(storage):
                 st.success("Record deleted.")
                 st.rerun()
     with photo_col:
-        photo_set = storage.get_photos(selected_id)
-        if photo_set["before"]:
-            st.markdown("**Before**")
-            for photo in photo_set["before"]:
-                st.image(photo, use_container_width=True)
-        if photo_set["after"]:
-            st.markdown("**After (rectified)**")
-            for photo in photo_set["after"]:
-                st.image(photo, use_container_width=True)
-        if not photo_set["before"] and not photo_set["after"]:
+        detailed = storage.get_photos_detailed(selected_id)
+        for kind, title in (("before", "Before"), ("after", "After (rectified)")):
+            if detailed[kind]:
+                st.markdown(f"**{title}**")
+                for photo_no, photo in detailed[kind]:
+                    st.image(photo, use_container_width=True)
+                    if st.button(
+                        "🗑️ Remove this photo",
+                        key=f"del_{selected_id}_{kind}_{photo_no}",
+                    ):
+                        storage.delete_photo(selected_id, kind, photo_no)
+                        st.success("Photo removed.")
+                        st.rerun()
+        if not detailed["before"] and not detailed["after"]:
             st.caption("No photos attached.")
 
         st.divider()
-        new_after = st.file_uploader(
-            "Add AFTER (rectified) photos",
+        st.markdown("**Add / change photos**")
+        add_kind = st.radio(
+            "Add as",
+            ["BEFORE (violation)", "AFTER (rectified)"],
+            horizontal=True,
+            key=f"kind_{selected_id}",
+        )
+        new_photos = st.file_uploader(
+            "Photos to add (compressed automatically before saving)",
             type=["jpg", "jpeg", "png"],
             accept_multiple_files=True,
-            key=f"after_{selected_id}",
+            key=f"addph_{selected_id}",
         )
-        if new_after and st.button("📤 Attach AFTER photos"):
-            storage.add_photos(selected_id, [p.getvalue() for p in new_after], kind="after")
-            st.success("Photos attached.")
+        if new_photos and st.button("📤 Upload photos", key=f"upl_{selected_id}"):
+            kind = "before" if add_kind.startswith("BEFORE") else "after"
+            storage.add_photos(
+                selected_id, [p.getvalue() for p in new_photos], kind=kind
+            )
+            st.success("Photos added.")
             st.rerun()
 
 
@@ -405,13 +533,21 @@ def render_compliance(storage):
 
     df = records_dataframe(records).fillna("")
 
-    scope = st.radio("Show", ["Pending", "All", "Completed"], horizontal=True)
+    fcol1, fcol2 = st.columns([1, 2])
+    with fcol1:
+        dept_filter = st.selectbox(
+            "Your department",
+            ["All departments"] + department_options(df),
+            key="compliance_dept",
+        )
+    with fcol2:
+        scope = st.radio("Show", ["Pending", "All", "Completed"], horizontal=True)
+
+    view = df if dept_filter == "All departments" else df[df["Department"] == dept_filter]
     if scope == "Pending":
-        view = df[df["Status"] == "Pending"]
+        view = view[view["Status"] == "Pending"]
     elif scope == "Completed":
-        view = df[df["Status"] == "Completed"]
-    else:
-        view = df
+        view = view[view["Status"] == "Completed"]
 
     if view.empty:
         st.success("Nothing here 🎉")
@@ -429,7 +565,8 @@ def render_compliance(storage):
     with detail_col:
         st.markdown("#### 📌 Point raised (read-only)")
         st.markdown(
-            f"**Safety Officer:** {record['Safety Officer'] or '—'}\n\n"
+            f"**Safety Officer:** {record['Safety Officer'] or '—'} &nbsp;·&nbsp; "
+            f"**Department:** {record['Department'] or '—'}\n\n"
             f"**Location / Shop:** {record['Location/Shop']}\n\n"
             f"**Description:** {record['Description of Violation/Hazard']}\n\n"
             f"**First appeared:** {record['First Appeared On']} &nbsp;·&nbsp; "
@@ -506,24 +643,33 @@ def render_generate_ppt(storage):
 
     df = records_dataframe(records)
     heading = st.text_input("Slide heading", value="PLANT SAFETY INSPECTION")
-    scope = st.radio(
-        "Which records?",
-        ["All", "Pending only", "Completed only", "Pick specific records"],
-        horizontal=True,
-    )
+    gcol1, gcol2 = st.columns([1, 2])
+    with gcol1:
+        dept_filter = st.selectbox(
+            "Department",
+            ["All departments"] + department_options(df),
+            key="ppt_dept",
+        )
+    with gcol2:
+        scope = st.radio(
+            "Which records?",
+            ["All", "Pending only", "Completed only", "Pick specific records"],
+            horizontal=True,
+        )
+    pool = df if dept_filter == "All departments" else df[df["Department"] == dept_filter]
     if scope == "Pending only":
-        chosen = df[df["Status"] == "Pending"]
+        chosen = pool[pool["Status"] == "Pending"]
     elif scope == "Completed only":
-        chosen = df[df["Status"] == "Completed"]
+        chosen = pool[pool["Status"] == "Completed"]
     elif scope == "Pick specific records":
         labels = {
             f"{row['ID']} — {row['Description of Violation/Hazard'][:60]}": row["ID"]
-            for _, row in df.iterrows()
+            for _, row in pool.iterrows()
         }
         picked = st.multiselect("Records", list(labels))
-        chosen = df[df["ID"].isin([labels[p] for p in picked])]
+        chosen = pool[pool["ID"].isin([labels[p] for p in picked])]
     else:
-        chosen = df
+        chosen = pool
 
     st.caption(f"{len(chosen)} slide(s) will be generated — one per record.")
     if chosen.empty:

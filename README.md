@@ -17,16 +17,20 @@ The app is a single password-protected app split into two top-level tabs:
 ### 👷 Safety Officer
 
 - **➕ New Entry** — log a violation/hazard: **Safety Officer** (who is
-  uploading), location/shop, description, date it first appeared, responsible
+  uploading), **Department** (responsible for the point — edit the
+  `DEPARTMENTS` list at the top of `app.py` to match your plant),
+  location/shop, description, date it first appeared, responsible
   officer (e.g. `Dy.CEE/M`), remarks, category (SV – Safety Violation /
   UA – Unsafe Act / UC – Unsafe Condition / NM – Near Miss), status, and up to
   4 BEFORE + 4 AFTER site photos (upload files or capture with the camera).
   A **Photo quality / compression** option shrinks photos before storing them
   to save database space while keeping good resolution.
-- **📋 Records** — view, search and filter all records; **✏️ Edit a point**
-  (correct the PSI — description, location, category, officer, etc.); update
-  status; view photos; attach more photos; delete records; **export to Excel**
-  (`.xlsx`) or **download as a PowerPoint**.
+- **📋 Records** — view, search and filter all records (by status and by
+  **department**); **✏️ Edit a point** (correct the PSI — description,
+  location, department, category, officer, etc.); update status; view,
+  remove or add photos; delete records; **export to Excel** (`.xlsx`) or
+  **download as a PowerPoint**. The Compliance and Generate PPT views have
+  the same department filter.
 - **🎞️ Generate PPT** — pick All / Pending / Completed / specific records and
   download a `.pptx` with one slide per record, matching the original format.
 
