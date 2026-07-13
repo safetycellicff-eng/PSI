@@ -16,8 +16,15 @@ def _secrets():
         return {}
 
 
+# Used when no password is configured in secrets, so the app is NEVER open
+# to the public. Change it by setting your own in secrets:
+#   [auth]
+#   password = "your-password"
+DEFAULT_PASSWORD = "safety@123"
+
+
 def _expected_password(app_key):
-    """The configured password as a clean string, or "" if none is set.
+    """The configured password as a clean string (falls back to the default).
 
     Also accepts a top-level ``password`` secret (outside [auth]) so a
     slightly misplaced secret still protects the app. Numbers are accepted
@@ -26,21 +33,19 @@ def _expected_password(app_key):
     secrets = _secrets()
     auth = dict(secrets.get("auth", {}))
     value = auth.get(app_key) or auth.get("password") or secrets.get("password")
-    return str(value).strip() if value is not None else ""
+    if value is None or not str(value).strip():
+        return DEFAULT_PASSWORD, True
+    return str(value).strip(), False
 
 
 def require_login(app_key="password", title="🔒 Sign in"):
     """Gate the app behind a password read from st.secrets["auth"].
 
-    If no auth password is configured, the app stays open (so local/demo use
-    isn't locked out) and a note is shown via auth_status_note(). Returns True
-    when the visitor may proceed.
+    The app is always locked: if no password is configured, the built-in
+    DEFAULT_PASSWORD applies. Returns True when the visitor may proceed.
     """
-    expected = _expected_password(app_key)
-    if not expected:
-        st.session_state["auth_mode"] = "open"
-        return True  # no password configured -> app is open
-    st.session_state["auth_mode"] = "protected"
+    expected, is_default = _expected_password(app_key)
+    st.session_state["auth_mode"] = "default" if is_default else "custom"
 
     flag = f"auth_ok_{app_key}"
     if st.session_state.get(flag):
@@ -61,11 +66,12 @@ def require_login(app_key="password", title="🔒 Sign in"):
 
 
 def auth_status_note():
-    """Sidebar note that makes a missing password configuration visible."""
-    if st.session_state.get("auth_mode") == "open":
+    """Sidebar note (shown after login) when the default password is in use."""
+    if st.session_state.get("auth_mode") == "default":
         st.warning(
-            "🔓 **No password set — anyone with the link can open this app.** "
-            'Add to your secrets:\n\n```toml\n[auth]\npassword = "your-password"\n```',
+            f"🔑 Using the **default password** (`{DEFAULT_PASSWORD}`). "
+            "Set your own in the app secrets:\n\n"
+            '```toml\n[auth]\npassword = "your-password"\n```',
             icon="⚠️",
         )
 

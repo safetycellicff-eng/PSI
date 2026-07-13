@@ -28,9 +28,12 @@ The app is a single password-protected app split into two top-level tabs:
 - **📋 Records** — view, search and filter all records (by status and by
   **department**); **✏️ Edit a point** (correct the PSI — description,
   location, department, category, officer, etc.); update status; view,
-  remove or add photos; delete records; **export to Excel** (`.xlsx`) or
-  **download as a PowerPoint**. The Compliance and Generate PPT views have
-  the same department filter.
+  remove or add photos; delete records; **export to Excel** (`.xlsx`),
+  **download as a PowerPoint**, or **download each PSI as a Word letter**
+  (`.docx`) in the official Integral Coach Factory report format (heading,
+  letter number, details table, photos, signature and Copy to list — edit
+  the constants at the top of `word_builder.py` if office names change).
+  The Compliance and Generate PPT views have the same department filter.
 - **🎞️ Generate PPT** — pick All / Pending / Completed / specific records and
   download a `.pptx` with one slide per record, matching the original format.
 
@@ -62,19 +65,21 @@ streamlit run app.py
 With no credentials configured the app runs in **local demo mode** (data saved
 to `.local_data/` on your machine) so you can try it immediately.
 
-## Password login (optional but recommended)
+## Password login (always on)
 
-By default a deployed app is **public** — anyone with the link sees the data.
-To require a password, add an `[auth]` section to your secrets:
+The app is **always password locked** — nobody sees any data without signing
+in. Set your own password in the secrets:
 
 ```toml
 [auth]
 password = "your-password"
 ```
 
-- If you omit the `[auth]` section entirely, the app stays open (no login).
-- The password lives only in secrets — never in the code or on GitHub. Because
-  Streamlit runs server-side, it's never exposed to visitors' browsers.
+- If no password is configured, the built-in **default password
+  `safety@123`** applies (a sidebar warning reminds you to set your own).
+- A custom password lives only in secrets — never in the code or on GitHub.
+  Because Streamlit runs server-side, it's never exposed to visitors'
+  browsers.
 - A **Log out** button appears in the sidebar once signed in.
 
 For a fixed, known set of viewers you can instead (or additionally) use

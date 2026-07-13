@@ -13,6 +13,7 @@ import streamlit as st
 from backend import auth_status_note, get_storage, logout_button, require_login
 from ppt_builder import build_ppt
 from storage import RECORD_HEADERS, STATUSES
+from word_builder import build_psi_letter
 
 st.set_page_config(
     page_title="Plant Safety Inspection Tracker",
@@ -99,17 +100,18 @@ CATEGORY_HELP = "Pick the type of finding. The short code (SV/UA/UC/NM) is shown
 # Short code -> full descriptive label, for display.
 CATEGORY_LABELS = {code: label for label, code in CATEGORY_OPTIONS.items()}
 
-# Departments responsible for compliance. EDIT THIS LIST to match your plant —
-# placeholder values for now; the app also shows any other department names
-# already present in saved records, so old data never disappears from filters.
+# Departments responsible for compliance. Edit here if the list changes —
+# the app also shows any other department names already present in saved
+# records, so old data never disappears from filters.
 DEPARTMENTS = [
     "Electrical",
     "Mechanical",
     "Civil",
-    "S&T",
     "Stores",
-    "Operations",
-    "Safety",
+    "Electrical Maintenance department",
+    "Mechanical Maintenance department",
+    "Production control Organization electrical",
+    "Production control Organization Mechanical",
     "Other",
 ]
 
@@ -391,6 +393,7 @@ def render_records(storage):
         return
     selected_id = st.selectbox("Record", record_ids)
     record = df[df["ID"] == selected_id].iloc[0]
+    detailed = storage.get_photos_detailed(selected_id)
 
     detail_col, photo_col = st.columns([3, 2])
     with detail_col:
@@ -469,8 +472,16 @@ def render_records(storage):
                 storage.delete_record(selected_id)
                 st.success("Record deleted.")
                 st.rerun()
+
+        letter_photos = [p for _, p in detailed["before"]] or [p for _, p in detailed["after"]]
+        st.download_button(
+            "📄 Download PSI letter (Word)",
+            data=build_psi_letter(record.to_dict(), letter_photos),
+            file_name=f"PSI_{selected_id}.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            help="Official PSI report letter for this point, in the standard format.",
+        )
     with photo_col:
-        detailed = storage.get_photos_detailed(selected_id)
         for kind, title in (("before", "Before"), ("after", "After (rectified)")):
             if detailed[kind]:
                 st.markdown(f"**{title}**")
