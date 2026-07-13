@@ -17,10 +17,10 @@ def _secrets():
 
 
 # Used when no password is configured in secrets, so the app is NEVER open
-# to the public. Change it by setting your own in secrets:
+# to the public. A password set in secrets overrides this:
 #   [auth]
 #   password = "your-password"
-DEFAULT_PASSWORD = "safety@123"
+DEFAULT_PASSWORD = "CSOfur@91"
 
 
 def _expected_password(app_key):

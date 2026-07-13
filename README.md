@@ -75,8 +75,9 @@ in. Set your own password in the secrets:
 password = "your-password"
 ```
 
-- If no password is configured, the built-in **default password
-  `safety@123`** applies (a sidebar warning reminds you to set your own).
+- If no password is configured, the **built-in default password** applies
+  (see `DEFAULT_PASSWORD` in `backend.py`; a sidebar warning after sign-in
+  reminds you to set your own).
 - A custom password lives only in secrets — never in the code or on GitHub.
   Because Streamlit runs server-side, it's never exposed to visitors'
   browsers.
