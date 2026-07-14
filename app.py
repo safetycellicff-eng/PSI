@@ -13,7 +13,7 @@ import streamlit as st
 from backend import auth_status_note, get_storage, logout_button, require_login
 from ppt_builder import build_ppt
 from storage import RECORD_HEADERS, STATUSES
-from word_builder import build_psi_letter
+from word_builder import build_psi_letter, letter_cause
 
 st.set_page_config(
     page_title="Plant Safety Inspection Tracker",
@@ -116,15 +116,25 @@ DEPARTMENTS = [
 ]
 
 
+def split_departments(value):
+    """A stored Department cell may hold several comma-separated departments."""
+    return [d.strip() for d in str(value).split(",") if d.strip()]
+
+
 def department_options(df=None):
-    """DEPARTMENTS plus any department values already present in the data."""
+    """DEPARTMENTS plus any individual department names already in the data."""
     options = list(DEPARTMENTS)
     if df is not None and "Department" in df:
         for value in df["Department"].unique():
-            value = str(value).strip()
-            if value and value not in options:
-                options.append(value)
+            for dept in split_departments(value):
+                if dept not in options:
+                    options.append(dept)
     return options
+
+
+def department_mask(df, dept):
+    """Boolean mask of rows whose Department cell includes ``dept``."""
+    return df["Department"].apply(lambda v: dept in split_departments(v))
 
 
 # Image compression presets -> (max longest side in px, JPEG quality).
@@ -252,15 +262,15 @@ def render_new_entry(storage):
                 height=110,
             )
             remarks = st.text_area(
-                "Remarks",
+                "Observation / Suggestions",
                 placeholder="e.g. Earth bus bar should be sunken or buried with earth pit…",
                 height=90,
             )
         with col2:
             first_appeared = st.date_input("First appeared on", value=date.today())
-            department = st.selectbox(
-                "Department (responsible)", department_options(),
-                help="Which department has to act on this point.",
+            departments = st.multiselect(
+                "Department(s) responsible", department_options(),
+                help="One point can be linked to more than one department.",
             )
             action_by = st.text_input("Action (responsible officer)", placeholder="e.g. Dy.CEE/M")
             category_label = st.selectbox(
@@ -298,16 +308,13 @@ def render_new_entry(storage):
             before_list.append(camera_photo.getvalue())
         if len(before_list) > 4 or len(after_list) > 4:
             st.warning("Only the first 4 photos of each kind will be used on the slide.")
-        full_description = (
-            f"{location.strip()}, {description.strip()}" if location.strip() else description.strip()
-        )
         with st.spinner("Saving…"):
             record_id = storage.add_record(
                 {
                     "safety_officer": safety_officer.strip(),
-                    "department": department,
+                    "department": ", ".join(departments),
                     "location": location.strip(),
-                    "description": full_description,
+                    "description": description.strip(),
                     "first_appeared": first_appeared.strftime("%d/%m/%Y"),
                     "action_by": action_by.strip(),
                     "remarks": remarks.strip(),
@@ -340,7 +347,7 @@ def render_records(storage):
     with col3:
         search = st.text_input("Search", placeholder="Filter by any text…")
 
-    dept_scope = df if dept_filter == "All departments" else df[df["Department"] == dept_filter]
+    dept_scope = df if dept_filter == "All departments" else df[department_mask(df, dept_filter)]
     filtered = dept_scope[dept_scope["Status"].isin(status_filter)] if status_filter else dept_scope
     if search.strip():
         mask = filtered.apply(
@@ -401,11 +408,12 @@ def render_records(storage):
             f"**Safety Officer:** {record['Safety Officer'] or '—'} &nbsp;·&nbsp; "
             f"**Department:** {record['Department'] or '—'} &nbsp;·&nbsp; "
             f"**Status:** {record['Status']}\n\n"
+            f"**Location:** {record['Location/Shop'] or '—'}\n\n"
             f"**Description:** {record['Description of Violation/Hazard']}\n\n"
             f"**First appeared:** {record['First Appeared On']} · "
             f"**Action:** {record['Action By']} · "
             f"**Category:** {CATEGORY_LABELS.get(record['Category'], record['Category'])}\n\n"
-            f"**Inspector's remarks:** {record['Remarks'] or '—'}\n\n"
+            f"**Observation / Suggestions:** {record['Suggestions'] or '—'}\n\n"
             f"**PDC:** {record['PDC'] or '—'} &nbsp;·&nbsp; "
             f"**Action remarks:** {record['Action Remarks'] or '—'}"
         )
@@ -414,10 +422,9 @@ def render_records(storage):
             with st.form(f"edit_{selected_id}"):
                 e_officer = st.text_input("Safety Officer", value=record["Safety Officer"])
                 dept_opts = department_options(df)
-                cur_dept = record["Department"] if record["Department"] in dept_opts else dept_opts[0]
-                e_department = st.selectbox(
-                    "Department (responsible)", dept_opts,
-                    index=dept_opts.index(cur_dept),
+                cur_depts = [d for d in split_departments(record["Department"]) if d in dept_opts]
+                e_departments = st.multiselect(
+                    "Department(s) responsible", dept_opts, default=cur_depts,
                 )
                 e_location = st.text_input("Location / Shop", value=record["Location/Shop"])
                 e_desc = st.text_area(
@@ -438,18 +445,18 @@ def render_records(storage):
                         "Category", cat_labels,
                         index=cat_labels.index(cur_label) if cur_label in cat_labels else 0,
                     )
-                e_remarks = st.text_area("Inspector's remarks", value=record["Remarks"])
+                e_remarks = st.text_area("Observation / Suggestions", value=record["Suggestions"])
                 save_edit = st.form_submit_button("💾 Save changes", type="primary")
             if save_edit:
                 storage.update_fields(selected_id, {
                     "Safety Officer": e_officer.strip(),
-                    "Department": e_department,
+                    "Department": ", ".join(e_departments),
                     "Location/Shop": e_location.strip(),
                     "Description of Violation/Hazard": e_desc.strip(),
                     "First Appeared On": e_first.strftime("%d/%m/%Y"),
                     "Action By": e_action.strip(),
                     "Category": CATEGORY_OPTIONS[e_cat_label],
-                    "Remarks": e_remarks.strip(),
+                    "Suggestions": e_remarks.strip(),
                 })
                 st.success("Point updated.")
                 st.rerun()
@@ -473,14 +480,7 @@ def render_records(storage):
                 st.success("Record deleted.")
                 st.rerun()
 
-        letter_photos = [p for _, p in detailed["before"]] or [p for _, p in detailed["after"]]
-        st.download_button(
-            "📄 Download PSI letter (Word)",
-            data=build_psi_letter(record.to_dict(), letter_photos),
-            file_name=f"PSI_{selected_id}.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            help="Official PSI report letter for this point, in the standard format.",
-        )
+        _render_letter_download(record, detailed, selected_id)
     with photo_col:
         for kind, title in (("before", "Before"), ("after", "After (rectified)")):
             if detailed[kind]:
@@ -520,6 +520,53 @@ def render_records(storage):
             st.rerun()
 
 
+def _render_letter_download(record, detailed, selected_id):
+    """Editable PSI-letter fields + Word download. Any field can be typed in
+    (handy for the letter-only fields not stored on the record)."""
+    with st.expander("📄 Download PSI letter (Word)"):
+        st.caption("Fields are pre-filled from the record — edit anything before downloading.")
+        lc1, lc2 = st.columns(2)
+        with lc1:
+            f_cause = st.text_input(
+                "Cause", value=letter_cause(record["Category"]), key=f"lc_{selected_id}"
+            )
+            f_location = st.text_input(
+                "Location", value=record["Location/Shop"], key=f"ll_{selected_id}"
+            )
+            f_shopno = st.text_input(
+                "ShopNo / Firm Name", value=record["Location/Shop"], key=f"ls_{selected_id}"
+            )
+            f_shopctrl = st.text_input(
+                "Shop Control", value=record["Department"], key=f"lsc_{selected_id}"
+            )
+        with lc2:
+            f_date = st.text_input(
+                "Date", value=record["First Appeared On"], key=f"ld_{selected_id}"
+            )
+            f_action = st.text_input(
+                "Action By", value=record["Action By"], key=f"la_{selected_id}"
+            )
+        f_desc = st.text_area(
+            "Description of Violation / Hazard",
+            value=record["Description of Violation/Hazard"], key=f"lde_{selected_id}",
+        )
+        f_obs = st.text_area(
+            "Observation / Suggestions", value=record["Suggestions"], key=f"lo_{selected_id}"
+        )
+        letter_photos = [p for _, p in detailed["before"]] or [p for _, p in detailed["after"]]
+        fields = {
+            "cause": f_cause, "location": f_location, "shopno": f_shopno,
+            "shop_control": f_shopctrl, "date": f_date, "action_by": f_action,
+            "description": f_desc, "observation": f_obs,
+        }
+        st.download_button(
+            "⬇️ Download PSI letter (Word)",
+            data=build_psi_letter(fields, letter_photos),
+            file_name=f"PSI_{selected_id}.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+
+
 def parse_date(value):
     """Parse a stored dd/mm/YYYY string, falling back to today."""
     try:
@@ -554,7 +601,7 @@ def render_compliance(storage):
     with fcol2:
         scope = st.radio("Show", ["Pending", "All", "Completed"], horizontal=True)
 
-    view = df if dept_filter == "All departments" else df[df["Department"] == dept_filter]
+    view = df if dept_filter == "All departments" else df[department_mask(df, dept_filter)]
     if scope == "Pending":
         view = view[view["Status"] == "Pending"]
     elif scope == "Completed":
@@ -584,7 +631,7 @@ def render_compliance(storage):
             f"**Action:** {record['Action By']} &nbsp;·&nbsp; "
             f"**Category:** {record['Category']} &nbsp;·&nbsp; "
             f"**Status:** {record['Status']}\n\n"
-            f"**Inspector's remarks:** {record['Remarks'] or '—'}"
+            f"**Observation / Suggestions:** {record['Suggestions'] or '—'}"
         )
     with photo_col:
         photos = storage.get_photos(record_id)
@@ -667,7 +714,7 @@ def render_generate_ppt(storage):
             ["All", "Pending only", "Completed only", "Pick specific records"],
             horizontal=True,
         )
-    pool = df if dept_filter == "All departments" else df[df["Department"] == dept_filter]
+    pool = df if dept_filter == "All departments" else df[department_mask(df, dept_filter)]
     if scope == "Pending only":
         chosen = pool[pool["Status"] == "Pending"]
     elif scope == "Completed only":

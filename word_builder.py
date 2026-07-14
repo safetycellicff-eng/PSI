@@ -38,10 +38,16 @@ CAUSE_NAMES = {
 }
 
 
-def build_psi_letter(record, photos):
+def letter_cause(category):
+    """Full 'Cause' text for a category code (e.g. 'UC' -> 'Unsafe Condition')."""
+    return CAUSE_NAMES.get(category, category or "")
+
+
+def build_psi_letter(fields, photos):
     """Return .docx bytes for one PSI in the official letter format.
 
-    record: dict keyed by storage.RECORD_HEADERS.
+    fields: dict with keys cause, location, shopno, shop_control, date,
+    action_by, description, observation (all plain strings).
     photos: list of image bytes (the violation photos).
     """
     doc = Document()
@@ -90,7 +96,7 @@ def build_psi_letter(record, photos):
     para.paragraph_format.space_after = Pt(8)
     para.add_run(SUBJECT)
 
-    _details_table(doc, record)
+    _details_table(doc, fields)
     _photos(doc, photos)
 
     # Signature, right aligned
@@ -120,11 +126,7 @@ def _set_cell(cell, text, bold=False, runs=None):
         run.font.size = Pt(11.5)
 
 
-def _details_table(doc, record):
-    cause = CAUSE_NAMES.get(record.get("Category", ""), record.get("Category", ""))
-    location = record.get("Location/Shop", "")
-    date = record.get("First Appeared On", "")
-
+def _details_table(doc, f):
     table = doc.add_table(rows=6, cols=3)
     table.style = "Table Grid"
     widths = (Inches(2.35), Inches(2.35), Inches(1.95))
@@ -133,26 +135,26 @@ def _details_table(doc, record):
             cell.width = width
 
     _set_cell(table.cell(0, 0), "Cause", bold=True)
-    _set_cell(table.cell(0, 1).merge(table.cell(0, 2)), cause)
+    _set_cell(table.cell(0, 1).merge(table.cell(0, 2)), f.get("cause", ""))
 
     _set_cell(table.cell(1, 0), "Location", bold=True)
-    _set_cell(table.cell(1, 1), location)
-    _set_cell(table.cell(1, 2), None, runs=[("Date", True), (f" :- {date}", False)])
+    _set_cell(table.cell(1, 1), f.get("location", ""))
+    _set_cell(table.cell(1, 2), None,
+              runs=[("Date", True), (f" :- {f.get('date', '')}", False)])
 
     _set_cell(table.cell(2, 0), "ShopNo / Firm Name", bold=True)
-    _set_cell(table.cell(2, 1), location)
+    _set_cell(table.cell(2, 1), f.get("shopno", ""))
     _set_cell(table.cell(2, 2), None,
-              runs=[("Shop Control : ", True), (record.get("Department", ""), False)])
+              runs=[("Shop Control : ", True), (f.get("shop_control", ""), False)])
 
     _set_cell(table.cell(3, 0), "Description of Violation / Hazard", bold=True)
-    _set_cell(table.cell(3, 1).merge(table.cell(3, 2)),
-              record.get("Description of Violation/Hazard", ""))
+    _set_cell(table.cell(3, 1).merge(table.cell(3, 2)), f.get("description", ""))
 
     _set_cell(table.cell(4, 0), "Observation / Suggestions", bold=True)
-    _set_cell(table.cell(4, 1).merge(table.cell(4, 2)), record.get("Remarks", ""))
+    _set_cell(table.cell(4, 1).merge(table.cell(4, 2)), f.get("observation", ""))
 
     _set_cell(table.cell(5, 0), "Action By", bold=True)
-    _set_cell(table.cell(5, 1).merge(table.cell(5, 2)), record.get("Action By", ""))
+    _set_cell(table.cell(5, 1).merge(table.cell(5, 2)), f.get("action_by", ""))
 
 
 def _photos(doc, photos, per_row=2, width=Inches(2.7)):

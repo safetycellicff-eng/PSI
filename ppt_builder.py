@@ -86,21 +86,22 @@ def _add_title(slide, heading, status):
 
 def _add_details_table(slide, record):
     rows = [
+        ("Location", record.get("Location/Shop", ""), True),
         ("Description of Violation/ Hazard",
          record.get("Description of Violation/Hazard", ""), True),
         ("First appeared on", record.get("First Appeared On", ""), False),
         ("Action", record.get("Action By", ""), False),
-        ("Remarks", record.get("Remarks", ""), False),
+        ("Observation / Suggestions", record.get("Suggestions", ""), False),
     ]
     shape = slide.shapes.add_table(
-        len(rows), 2, Inches(0.98), Inches(0.76), Inches(9.76), Inches(1.86)
+        len(rows), 2, Inches(0.98), Inches(0.7), Inches(9.76), Inches(2.0)
     )
     table = shape.table
     table.first_row = False
     table.horz_banding = False
-    table.columns[0].width = Inches(2.03)
-    table.columns[1].width = Inches(7.73)
-    for height, row in zip((0.62, 0.28, 0.29, 0.63), table.rows):
+    table.columns[0].width = Inches(2.35)
+    table.columns[1].width = Inches(7.41)
+    for height, row in zip((0.3, 0.58, 0.28, 0.28, 0.48), table.rows):
         row.height = Inches(height)
 
     for row_no, (label, value, value_bold) in enumerate(rows):

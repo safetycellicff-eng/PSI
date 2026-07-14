@@ -28,7 +28,7 @@ RECORD_HEADERS = [
     "Description of Violation/Hazard",
     "First Appeared On",
     "Action By",
-    "Remarks",
+    "Suggestions",
     "Category",
     "Status",
     "PDC",             # Probable Date of Completion, set by the action owner
@@ -81,7 +81,7 @@ def _record_updates(status=None, remarks=None, pdc=None, action_remarks=None):
     """Build a {RECORD_HEADERS key: value} dict for update_fields, skipping Nones."""
     updates = {
         "Status": status,
-        "Remarks": remarks,
+        "Suggestions": remarks,
         "PDC": pdc,
         "Action Remarks": action_remarks,
     }
@@ -317,7 +317,7 @@ class SupabaseStorage:
         "Description of Violation/Hazard": "description",
         "First Appeared On": "first_appeared",
         "Action By": "action_by",
-        "Remarks": "remarks",
+        "Suggestions": "remarks",
         "Category": "category",
         "Status": "status",
         "PDC": "pdc",
@@ -512,7 +512,7 @@ class LocalStorage:
                 "Description of Violation/Hazard": record.get("description", ""),
                 "First Appeared On": record.get("first_appeared", ""),
                 "Action By": record.get("action_by", ""),
-                "Remarks": record.get("remarks", ""),
+                "Suggestions": record.get("remarks", ""),
                 "Category": record.get("category", "SV"),
                 "Status": record.get("status", "Pending"),
                 "PDC": record.get("pdc", ""),

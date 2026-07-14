@@ -17,12 +17,13 @@ The app is a single password-protected app split into two top-level tabs:
 ### 👷 Safety Officer
 
 - **➕ New Entry** — log a violation/hazard: **Safety Officer** (who is
-  uploading), **Department** (responsible for the point — edit the
-  `DEPARTMENTS` list at the top of `app.py` to match your plant),
-  location/shop, description, date it first appeared, responsible
-  officer (e.g. `Dy.CEE/M`), remarks, category (SV – Safety Violation /
-  UA – Unsafe Act / UC – Unsafe Condition / NM – Near Miss), status, and up to
-  4 BEFORE + 4 AFTER site photos (upload files or capture with the camera).
+  uploading), **Department(s)** responsible (a **multiselect** — one point can
+  link to several departments; edit the `DEPARTMENTS` list at the top of
+  `app.py` to match your plant), location/shop, description, date it first
+  appeared, responsible officer (e.g. `Dy.CEE/M`), **Observation /
+  Suggestions**, category (SV – Safety Violation / UA – Unsafe Act /
+  UC – Unsafe Condition / NM – Near Miss), status, and up to 4 BEFORE + 4 AFTER
+  site photos (upload files or capture with the camera).
   A **Photo quality / compression** option shrinks photos before storing them
   to save database space while keeping good resolution.
 - **📋 Records** — view, search and filter all records (by status and by
@@ -30,10 +31,13 @@ The app is a single password-protected app split into two top-level tabs:
   location, department, category, officer, etc.); update status; view,
   remove or add photos; delete records; **export to Excel** (`.xlsx`),
   **download as a PowerPoint**, or **download each PSI as a Word letter**
-  (`.docx`) in the official Integral Coach Factory report format (heading,
-  letter number, details table, photos, signature and Copy to list — edit
-  the constants at the top of `word_builder.py` if office names change).
-  The Compliance and Generate PPT views have the same department filter.
+  (`.docx`) in the official Integral Coach Factory report format. The Word
+  letter has **editable fields** — every field (Cause, Location, Date,
+  ShopNo / Firm Name, Shop Control, Description, Observation / Suggestions,
+  Action By) is pre-filled from the record and can be typed in / corrected
+  before download (edit the office-name constants at the top of
+  `word_builder.py` if they change). The Compliance and Generate PPT views
+  have the same department filter (matching any of a point's departments).
 - **🎞️ Generate PPT** — pick All / Pending / Completed / specific records and
   download a `.pptx` with one slide per record, matching the original format.
 
