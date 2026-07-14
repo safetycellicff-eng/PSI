@@ -19,13 +19,16 @@ The app is a single password-protected app split into two top-level tabs:
 - **➕ New Entry** — log a violation/hazard: **Safety Officer** (who is
   uploading), **Department(s)** responsible (a **multiselect** — one point can
   link to several departments; edit the `DEPARTMENTS` list at the top of
-  `app.py` to match your plant), location/shop, description, date it first
-  appeared, responsible officer (e.g. `Dy.CEE/M`), **Observation /
+  `app.py` to match your plant), location/shop, description, responsible
+  officer (e.g. `Dy.CEE/M`), **Observation /
   Suggestions**, category (SV – Safety Violation / UA – Unsafe Act /
   UC – Unsafe Condition / NM – Near Miss), status, and up to 4 BEFORE + 4 AFTER
   site photos (upload files or capture with the camera).
-  A **Photo quality / compression** option shrinks photos before storing them
-  to save database space while keeping good resolution.
+  The **"First appeared on"** date is set automatically to the upcoming
+  **Wednesday** (the weekly safety-review meeting day), since points are first
+  shown at that meeting. A **Photo quality / compression** option shrinks
+  photos before storing them to save database space while keeping good
+  resolution.
 - **📋 Records** — view, search and filter all records (by status and by
   **department**); **✏️ Edit a point** (correct the PSI — description,
   location, department, category, officer, etc.); update status; view,

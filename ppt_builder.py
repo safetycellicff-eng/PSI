@@ -86,10 +86,10 @@ def _add_title(slide, heading, status):
 
 def _add_details_table(slide, record):
     rows = [
-        ("Location", record.get("Location/Shop", ""), True),
         ("Description of Violation/ Hazard",
          record.get("Description of Violation/Hazard", ""), True),
         ("First appeared on", record.get("First Appeared On", ""), False),
+        ("Location", record.get("Location/Shop", ""), True),
         ("Action", record.get("Action By", ""), False),
         ("Observation / Suggestions", record.get("Suggestions", ""), False),
     ]
@@ -101,7 +101,7 @@ def _add_details_table(slide, record):
     table.horz_banding = False
     table.columns[0].width = Inches(2.35)
     table.columns[1].width = Inches(7.41)
-    for height, row in zip((0.3, 0.58, 0.28, 0.28, 0.48), table.rows):
+    for height, row in zip((0.58, 0.28, 0.3, 0.28, 0.48), table.rows):
         row.height = Inches(height)
 
     for row_no, (label, value, value_bold) in enumerate(rows):

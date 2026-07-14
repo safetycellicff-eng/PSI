@@ -5,7 +5,7 @@ them in Google Sheets (or Supabase), and generate the meeting PPT on demand.
 """
 
 import io
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 import streamlit as st
@@ -114,6 +114,18 @@ DEPARTMENTS = [
     "Production control Organization Mechanical",
     "Other",
 ]
+
+
+def next_wednesday(from_date=None):
+    """The upcoming Wednesday — the weekly safety-review meeting day.
+
+    Points are shown at the Wednesday meeting, so a point raised on any day
+    'first appears' on the coming Wednesday. Returns the date itself when it
+    is already a Wednesday.
+    """
+    from_date = from_date or date.today()
+    days_ahead = (2 - from_date.weekday()) % 7  # Monday=0 … Wednesday=2
+    return from_date + timedelta(days=days_ahead)
 
 
 def split_departments(value):
@@ -267,7 +279,12 @@ def render_new_entry(storage):
                 height=90,
             )
         with col2:
-            first_appeared = st.date_input("First appeared on", value=date.today())
+            first_appeared = next_wednesday()
+            st.markdown("**First appeared on**")
+            st.info(
+                f"🗓️ {first_appeared.strftime('%d/%m/%Y')} "
+                f"({first_appeared.strftime('%A')} review meeting)"
+            )
             departments = st.multiselect(
                 "Department(s) responsible", department_options(),
                 help="One point can be linked to more than one department.",
